@@ -1,0 +1,11 @@
+# Exclude raw and cleaned data
+data/raw/
+data/clean/
+
+# Exclude RStudio project cache
+.Rproj.user/
+*.Rproj.user
+
+# Exclude temporary files
+*.RData
+*.Rhistory
