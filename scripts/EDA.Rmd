@@ -99,4 +99,3 @@ readr::write_csv(
   * **Frequentist baseline** – `glm.nb()` with `death ~ gdp_pc + offset(log(pop_total))`.
   * **Bayesian NB**  fitted in Stan.
   * **Metrics:** PSIS‑LOO for Bayesian, AIC & 10‑fold CV for frequentist.
-```
