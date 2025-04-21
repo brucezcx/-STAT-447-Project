@@ -1,0 +1,102 @@
+---
+Title: "Exploratory Data Analysis – Road‑Traffic Mortality (Simple Version)"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+packages <- c("tidyverse", "naniar", "GGally", "skimr", "patchwork")
+
+install.packages(setdiff(packages, rownames(installed.packages())))
+lapply(packages, library, character.only = TRUE)
+
+dat <- readr::read_csv("../data/clean/traffic_mortality_panel.csv",
+                       show_col_types = FALSE)
+```
+
+## 1 Data overview
+
+```{r skim}
+skimr::skim(dat)
+```
+
+## 2 Missing‑data pattern
+
+```{r missing}
+# Bar chart of missing rate per variable
+naniar::gg_miss_var(dat) +
+  labs(title = "Missing rate by variable")
+
+# UpSet plot – top 5 missing‑value sets
+naniar::gg_miss_upset(dat, nsets = 5)
+```
+
+## 3 Subset for modelling
+
+```{r subset}
+# Keep observations from 2000 onwards where GDP & vehicles variables are available
+# If you plan to drop vehicles_pc from the model, comment out the is.na(vehicles_pc) line.
+
+dat_mod <- dat %>%
+  dplyr::filter(year >= 2000,
+                !is.na(gdp_pc),
+                !is.na(vehicles_pc))
+# Compare row counts
+ tibble(version = c("All years", "Year >= 2000 & no NA veh/gdp"),
+        rows    = c(nrow(dat), nrow(dat_mod)))
+```
+
+## 4 Univariate distributions
+
+```{r dists, fig.height=5}
+# Histograms (log‑scale where highly skewed)
+
+p1 <- ggplot(dat, aes(deaths))      + geom_histogram(bins = 40) + scale_x_log10() + labs(title = "Deaths (log10)")
+p2 <- ggplot(dat, aes(death_rate))  + geom_histogram(bins = 40) + labs(title = "Deaths per 100k")
+p3 <- ggplot(dat, aes(gdp_pc))      + geom_histogram(bins = 40) + scale_x_log10() + labs(title = "GDP per cap (log10)")
+p4 <- ggplot(dat, aes(vehicles_pc)) + geom_histogram(bins = 40) + labs(title = "Vehicles per 1k")
+
+(p1 | p2) / (p3 | p4)
+```
+
+## 5 Time trend
+
+```{r trend}
+dat %>%
+  dplyr::group_by(year) %>%
+  dplyr::summarise(median = median(death_rate, na.rm = TRUE),
+                   q25    = quantile(death_rate, 0.25, na.rm = TRUE),
+                   q75    = quantile(death_rate, 0.75, na.rm = TRUE)) %>%
+  ggplot(aes(year, median)) +
+  geom_ribbon(aes(ymin = q25, ymax = q75), alpha = .2) +
+  geom_line(size = 1) +
+  labs(y = "Deaths per 100k", title = "Global trend: median & IQR")
+```
+
+## 6 Pairwise relationships (subset 2000+)
+
+```{r pairs, fig.height=7, warning=FALSE}
+if (nrow(dat_mod) > 30) {
+  dat_mod %>%
+    dplyr::select(death_rate, gdp_pc, vehicles_pc) %>%
+    GGally::ggpairs(progress = FALSE)
+}
+```
+
+## 7 Save 100‑row sample for the repository
+
+```{r sample, echo=FALSE, results='hide'}
+set.seed(447)
+readr::write_csv(
+  dplyr::sample_n(dat, size = min(nrow(dat), 100)),
+  "../data/sample/traffic_sample.csv")
+```
+
+## 8 Takeaways
+
+* Vehicles per‑capita is missing **`r round(mean(is.na(dat$vehicles_pc))*100,1)`%** of the time. Under **Model A**, we exclude this variable.
+* Death rate shows a negative relationship with GDP per capita.
+* We will compare:
+  * **Frequentist baseline** – `glm.nb()` with `death ~ gdp_pc + offset(log(pop_total))`.
+  * **Bayesian NB**  fitted in Stan.
+  * **Metrics:** PSIS‑LOO for Bayesian, AIC & 10‑fold CV for frequentist.
+```
